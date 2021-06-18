@@ -10,44 +10,50 @@ from util import DirectedGraph
 LAYERS_NEURONS=[128,64,16,8]
 LEARNING_RATE=0.0001
 
-N_ITER=200000#NUMBER OF ITERATIONS/GENERATIONS
+N_ITER=200#NUMBER OF ITERATIONS/GENERATIONS
 N_SESSIONS_PER_ITER=5000
 TRAIN_PERCENTILE=10#top percentile we are learning from each iteration
 SUPER_PERCENTILE=1#top percentile of sesstions that live to the next generation
 
 
 def make_choice(model, graph : DirectedGraph, cur_state):
-    action_prob : torch.tensor = nn.Softmax(dim=1)(model(cur_state[None, :]))[0,:]  # make input be 2D before giving it to model and then reverse
+    action_prob : np.ndarray = nn.Softmax(dim=1)(model(cur_state[None, :]))[0,:].detach().numpy()  # make input be 2D before giving it to model and then reverse
 
-    valid_actions=util.extract_legal_actions(cur_state)
-    visited_nodes=util.extract_visited_nodes(cur_state)
+    reachable_nodes_one_hot=util.extract_legal_actions(cur_state)
+    visited_nodes_one_hot=util.extract_visited_nodes(cur_state)
 
-    action=np.random.choice([i for i in range(graph.N)], p=action_prob.detach().numpy())
-    if action not in valid_actions:
-        return action, 0, True
-    if action in visited_nodes:
-        return action, 0, True
+    valid_actions_one_hot=reachable_nodes_one_hot & (~visited_nodes_one_hot)
+    valid_actions=np.where(valid_actions_one_hot)[0]
 
+    if len(valid_actions)<=0:
+        return -1, 0, True
+
+    valid_actions_prob=action_prob[valid_actions_one_hot]
+    valid_actions_prob/=np.sum(valid_actions_prob)
+
+    action=np.random.choice(valid_actions, p=valid_actions_prob)
     return action, 1, False
 
 def initilize_model_state(graph : DirectedGraph):
     init_state=[0]*(graph.N*3)
 
+    init_node=28
+
     #set 1 to index of current node (we start from node 0)
     offset=0
-    init_state[offset+28]=1
+    init_state[offset+init_node]=1
 
 
     #set values to 1 at indices of nodes that are reachable from current node
     offset=graph.N
-    reachable_nodes=graph.edge_list[28]
-    for i in range(graph.edge_cnt[28]):
+    reachable_nodes=graph.edge_list[init_node]
+    for i in range(graph.edge_cnt[init_node]):
         reachable_node=reachable_nodes[i]
         init_state[offset+reachable_node]=1
 
     #set values of visited nodes so far to 1
     offset=graph.N*2
-    init_state[offset+28]=1#not needed but for explanatory purposes this code is here
+    init_state[offset+init_node]=1#not needed but for explanatory purposes this code is here
 
     return torch.from_numpy(np.array(init_state)).float()
 
@@ -80,12 +86,12 @@ def generate_session(model, graph):
     cur_state=initilize_model_state(graph)
     while True:
         action, transition_reward, terminal=make_choice(model, graph, cur_state)
-        reward+=transition_reward
-
-        state_action_seq.append((cur_state, action))
 
         if terminal:
             break
+
+        reward+=transition_reward
+        state_action_seq.append((cur_state, action))
 
         cur_state=update_model_state(cur_state, action, graph)
 
@@ -158,7 +164,17 @@ def obtain_graph_walker_policy(graph):
         reward_super_sessions_mean=np.mean([el[1] for el in super_sessions])
         print('Mean reward of top {} % sessions = {}'.format(SUPER_PERCENTILE, reward_super_sessions_mean))
 
-        if i>20 and sum([abs(reward_super_sessions_mean-mean_reward_vals[j]) for j in range(-1,-15,-1)])<0.1:
+        if i>=5:
+            best_session_state_action_pairs, best_session_reward = super_sessions[0]
+            print('Best session reward: {}'.format(best_session_reward))
+            print(28, end='')
+            for state, action in best_session_state_action_pairs:
+                print('->{}'.format(action), end='')
+
+            print()
+            break
+
+        if i>20 and sum([abs(reward_super_sessions_mean-mean_reward_vals[j]) for j in range(-1,-5,-1)])<0.1:
             best_session_state_action_pairs,best_session_reward=super_sessions[0]
             print('Best session reward: {}'.format(best_session_reward))
             print(28,end='')

@@ -7,6 +7,7 @@ class DirectedGraph:
         self.adj_matr=np.zeros((N, N), dtype=np.int8)
         self.edge_list=np.full((N, N), None)
         self.edge_cnt=np.zeros(N, dtype=np.int16)
+        self.tot_edge_cnt=0
 
     def add_edge(self, v1,v2):
         if self.adj_matr[v1][v2]==1:
@@ -15,6 +16,8 @@ class DirectedGraph:
         self.adj_matr[v1][v2]=1
         self.edge_list[v1][self.edge_cnt[v1]]=v2
         self.edge_cnt[v1]+=1
+
+        self.tot_edge_cnt+=1
 
     def __repr__(self):
         str='N: {}'.format(self.N)
@@ -49,7 +52,7 @@ def build_graph2():
     for i in range(N-1):
         graph.add_edge(rand_perm[i], rand_perm[i+1])
 
-    for i in range(N*(N-1)//5):
+    for i in range(N*(N-1)//100):
         graph.add_edge(np.random.randint(0, N), np.random.randint(0, N))
 
     return graph
@@ -57,17 +60,17 @@ def build_graph2():
 def extract_legal_actions(state : list):
     N=len(state)//3
 
-    filter=state[N:2*N]
-    return set(np.where(filter==1)[0])
+    filter=np.array(state[N:2*N])
+    return filter==1
 
 
 def extract_visited_nodes(state : list):
     N=len(state)//3
 
     filter=np.array(state[2*N:])
-    return set(np.where(filter==1)[0])
+    return filter==1
 
 if __name__=='__main__':
     graph=build_graph2()
     print(graph)
-
+    print(graph.tot_edge_cnt)
