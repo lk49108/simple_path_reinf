@@ -1,11 +1,15 @@
 import util
-from models import DenseNet
 import torch
 from torch import nn
 import numpy as np
-from train import train_network
+import time
+from tqdm import trange
 
+from models import DenseNet
+from train import train_network
 from util import DirectedGraph
+
+
 
 LAYERS_NEURONS=[128,64,16,8]
 LEARNING_RATE=0.0001
@@ -37,7 +41,7 @@ def make_choice(model, graph : DirectedGraph, cur_state):
 def initilize_model_state(graph : DirectedGraph):
     init_state=[0]*(graph.N*3)
 
-    init_node=5014
+    init_node=918
 
     #set 1 to index of current node (we start from node 0)
     offset=0
@@ -103,7 +107,7 @@ def generate_sessions(model, graph, n_sessions):
     Code generates list of such sessions
     """
     sessions=[None]*n_sessions
-    for i in range(n_sessions):
+    for i in trange(n_sessions):
         sessions[i]=generate_session(model, graph)
 
     return sessions
@@ -141,15 +145,25 @@ def obtain_graph_walker_policy(graph):
 
     mean_reward_vals=[]
     for i in range(N_ITER):
+        t=time.time()
         sessions : list(tuple(list(tuple), int)) = generate_sessions(model, graph, N_SESSIONS_PER_ITER)
+        sessions_gen_time=time.time()-t
+        print('Sessions generation time: {}'.format(sessions_gen_time))
 
+        t=time.time()
         if i>0:
             #append super sessions (top SUPER_PERCENTILE from previous iteration) to current sessions
             sessions+=super_sessions
+        super_sessions_append_time=time.time()-t
+        print('Supper sessions append time: {}'.format(super_sessions_append_time))
 
+        t=time.time()
         elite_sessions=select_elite_sessions(sessions)#select sessions on which we train the agent
         super_sessions=select_super_sessions(sessions)#select sessions which survive to next iteration
+        elite_and_super_sessions_select_time=time.time()-t
+        print('Elite and supper sessions select time: {}'.format(elite_and_super_sessions_select_time))
 
+        t=time.time()
         train_x, train_y=np.empty((0,3*graph.N)), np.empty((0,1))
         for state_action_pairs,_ in elite_sessions:
             for state, action in state_action_pairs:
@@ -158,8 +172,13 @@ def obtain_graph_walker_policy(graph):
 
         train_dataset=torch.from_numpy(np.column_stack((train_x, train_y))).float()
         train_loader=torch.utils.data.DataLoader(train_dataset, shuffle=True, batch_size=16)
+        train_loader_creation_time=time.time()-t
+        print('Train loader creation time: {}'.format(train_loader_creation_time))
 
+        t=time.time()
         train_network(model, torch.nn.CrossEntropyLoss(), optimizer, train_loader)
+        train_time=time.time()-t
+        print('Train time: {}'.format(train_time))
 
         reward_super_sessions_mean=np.mean([el[1] for el in super_sessions])
         print('Mean reward of top {} % sessions = {}'.format(SUPER_PERCENTILE, reward_super_sessions_mean))
@@ -188,11 +207,4 @@ def obtain_graph_walker_policy(graph):
 
 
 if __name__=='__main__':
-    obtain_graph_walker_policy(util.build_graph3(n_chains=100,chains_length=100))
-
-# [28 20 49 34 32  2 35 24  0 48 45 23 13  6  5 37 31 25  4 14 19 17 30 26
-#  47 39 12 29 27  9 11 44 15 42 21 41 43 40 36 33  7 38  1  3  8 16 10 46
-#  18 22]
-#
-# 28->24->43->9->20->0->40->34->8->4->23->36->48->30->33->13->25->2->15->32->11->49->10->45->37->47->38->26->14->16->35->42->18
-
+    obtain_graph_walker_policy(util.build_graph3(n_chains=25,chains_length=100))
