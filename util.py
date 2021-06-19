@@ -57,35 +57,42 @@ def build_graph2():
 
     return graph
 
-def build_graph3():
+def build_graph3(n_chains=10, chains_length=10):
+    def build_chain(graph, node_ids):
+        for i in range(len(node_ids)-1):
+            graph.add_edge(node_ids[i], node_ids[i+1])
+
+        return node_ids[0]
+
+    def add_random_edges(graph, subgraph_node_ids):
+        N=len(subgraph_node_ids)
+        for i in range(len(subgraph_node_ids)):
+            graph.add_edge(subgraph_node_ids[np.random.randint(0, N)], subgraph_node_ids[np.random.randint(0, N)])
+
+
     np.random.seed(73)
 
-    N=102
+    N=n_chains*chains_length+2
     rand_perm=np.random.permutation(N)
 
     graph=DirectedGraph(N)
-    for i in range(1,11):
-        graph.add_edge(rand_perm[0], rand_perm[i])
+    start_node=rand_perm[-1]
+    for i in range(n_chains):
+        chain_start_node=build_chain(graph, rand_perm[i*chains_length:(i+1)*chains_length])
+        graph.add_edge(start_node, chain_start_node)
 
-    prev_node=None
-    for i in range(11, 101):
-        if i%10==1:
-            prev_node=rand_perm[i//10]
+    graph.add_edge(rand_perm[-3], rand_perm[-2])
 
-        graph.add_edge(prev_node, rand_perm[i])
-        prev_node=rand_perm[i]
+    for i in range(n_chains):
+        if i<n_chains-1:
+            add_random_edges(graph, rand_perm[i*chains_length:(i+1)*chains_length])
+        else:
+            add_random_edges(graph, rand_perm[i*chains_length:(i+1)*chains_length+1])
 
-    graph.add_edge(prev_node, rand_perm[-1])
-
-    for i in range(1,10):
-        for j in range(15):
-            graph.add_edge(rand_perm[np.random.randint(i*10+1, (i+1)*10+1)], rand_perm[np.random.randint(i*10+1, (i+1)*10+1)])
-
-    print('Longest simple path: ', end='')
-    print(rand_perm[0], end='')
-    for i in range(91, 102):
-        print('->', rand_perm[i], end='')
-
+    print('Longest simple path: ',end='')
+    print(rand_perm[-1],end='')
+    for i in range(-chains_length-2, -1, 1):
+        print('->{}'.format(rand_perm[i]),end='')
     print()
 
     return graph
@@ -105,6 +112,6 @@ def extract_visited_nodes(state : list):
     return filter==1
 
 if __name__=='__main__':
-    graph=build_graph3()
+    graph=build_graph3(2,2)
     print(graph)
     print(graph.tot_edge_cnt)

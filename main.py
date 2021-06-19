@@ -37,7 +37,7 @@ def make_choice(model, graph : DirectedGraph, cur_state):
 def initilize_model_state(graph : DirectedGraph):
     init_state=[0]*(graph.N*3)
 
-    init_node=78
+    init_node=5014
 
     #set 1 to index of current node (we start from node 0)
     offset=0
@@ -188,7 +188,7 @@ def obtain_graph_walker_policy(graph):
 
 
 if __name__=='__main__':
-    obtain_graph_walker_policy(util.build_graph3())
+    obtain_graph_walker_policy(util.build_graph3(n_chains=100,chains_length=100))
 
 # [28 20 49 34 32  2 35 24  0 48 45 23 13  6  5 37 31 25  4 14 19 17 30 26
 #  47 39 12 29 27  9 11 44 15 42 21 41 43 40 36 33  7 38  1  3  8 16 10 46
