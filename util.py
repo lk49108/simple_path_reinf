@@ -57,6 +57,40 @@ def build_graph2():
 
     return graph
 
+def build_graph3():
+    np.random.seed(73)
+
+    N=102
+    rand_perm=np.random.permutation(N)
+
+    graph=DirectedGraph(N)
+    for i in range(1,11):
+        graph.add_edge(rand_perm[0], rand_perm[i])
+
+    prev_node=None
+    for i in range(11, 101):
+        if i%10==1:
+            prev_node=rand_perm[i//10]
+
+        graph.add_edge(prev_node, rand_perm[i])
+        prev_node=rand_perm[i]
+
+    graph.add_edge(prev_node, rand_perm[-1])
+
+    for i in range(1,10):
+        for j in range(15):
+            graph.add_edge(rand_perm[np.random.randint(i*10+1, (i+1)*10+1)], rand_perm[np.random.randint(i*10+1, (i+1)*10+1)])
+
+    print('Longest simple path: ', end='')
+    print(rand_perm[0], end='')
+    for i in range(91, 102):
+        print('->', rand_perm[i], end='')
+
+    print()
+
+    return graph
+
+
 def extract_legal_actions(state : list):
     N=len(state)//3
 
@@ -71,6 +105,6 @@ def extract_visited_nodes(state : list):
     return filter==1
 
 if __name__=='__main__':
-    graph=build_graph2()
+    graph=build_graph3()
     print(graph)
     print(graph.tot_edge_cnt)

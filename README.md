@@ -1,13 +1,5 @@
 # simple_path_reinf
 
-Project to solve NP problem of finding longest simple path in directed graph G=(V,E) using reinforcement learning approach.
-We denote by n=|V|.
+Project to solve NP hard problem of finding longest simple path in directed graph using reinforcement learning approach. At the moment Cross entropy algorithm is used. Additionally, at the moment we give a priori information to algorithm from which node the longest path starts (will be changed).
 
-Neural network will be used as a policy.
-Input to the network will be current state of the agent
-and on the output network will give distribution over actions
-to take in current state.
-State of the agent needs to consist of information
-saying which states he already visited, current state he is in and next state we consider going to (the one that is adjacent to current one and is not yet visited). We might also give agent as part of state adjacency matrix which is of dimension n^2. But not for now since the dimension of the same is a big problem and might get agent completely lost.
-Output of the agent needs to consist of probability weather
-to accept transition from current state to next state.
+Neural network is used as a policy. State (input to the network) is binary (consists of 0's and 1's) of length 3*N, where N is number of nodes in the graph. First N digits of state are one-hot encoding of current node agent is in. Second batch of N digits has one-hot encoding of nodes that are reachable from current node agent is in. Third batch of N digits is one-hot encoding of what nodes are visited so far (in current session) by agent. Output of the agent (network) is probability distribution over what node should agent go to next.
