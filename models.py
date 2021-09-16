@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import itertools
+from concurrent.futures import ThreadPoolExecutor
 
 class DenseNet(nn.Module):
     def __init__(self, widths):
@@ -20,8 +21,12 @@ class DenseNet(nn.Module):
         return prob
 
 if __name__=='__main__':
-    net=DenseNet([2,3,1])
-    print(net.state_dict())
-    d=torch.tensor([1,10]).float()
-    f=nn.Softmax(dim=0)
-    print(f(d))
+    def wait_on_future():
+        f = executor.submit(pow, 5, 2)
+        # This will never complete because there is only one worker thread and
+        # it is executing this function.
+        print(f.result())
+
+
+    executor = ThreadPoolExecutor(max_workers=2)
+    executor.submit(wait_on_future)

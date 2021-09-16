@@ -3,7 +3,14 @@ import torch
 from torch import nn
 import numpy as np
 import time
+
 from tqdm import trange
+from numba import njit,jit,objmode,prange
+
+import multiprocessing
+import concurrent
+
+import functools
 
 from models import DenseNet
 from train import train_network
@@ -19,34 +26,45 @@ N_SESSIONS_PER_ITER=5000
 TRAIN_PERCENTILE=10#top percentile we are learning from each iteration
 SUPER_PERCENTILE=1#top percentile of sesstions that live to the next generation
 
+epsilon=0.05#probability to select random choice when moving along edges of a graph
 
 def make_choice(model, graph : DirectedGraph, cur_state):
-    action_prob : np.ndarray = nn.Softmax(dim=1)(model(cur_state[None, :]))[0,:].detach().numpy()  # make input be 2D before giving it to model and then reverse
-
     reachable_nodes_one_hot=util.extract_legal_actions(cur_state)
     visited_nodes_one_hot=util.extract_visited_nodes(cur_state)
 
     valid_actions_one_hot=reachable_nodes_one_hot & (~visited_nodes_one_hot)
     valid_actions=np.where(valid_actions_one_hot)[0]
 
-    if len(valid_actions)<=0:
+    if len(valid_actions) <= 0:
+        #terminate the episode
         return -1, 0, True
 
-    valid_actions_prob=action_prob[valid_actions_one_hot]
-    valid_actions_prob/=np.sum(valid_actions_prob)
+    if np.random.uniform()<=epsilon:
+        #select a random choice
+        action = np.random.choice(valid_actions)
+    else:
+        action_prob : np.ndarray = nn.Softmax(dim=1)(model(cur_state[None, :]))[0,:].detach().numpy()  # make input be 2D before giving it to model and then reverse
 
-    action=np.random.choice(valid_actions, p=valid_actions_prob)
+        valid_actions_prob=action_prob[valid_actions_one_hot]
+        valid_actions_prob+=1e-9#to solve numerical stability problems when sum(valid_actions_prob) is close to 0
+        valid_actions_prob/=np.sum(valid_actions_prob)
+
+        action=np.random.choice(valid_actions, p=valid_actions_prob)
+
     return action, 1, False
+
+def choose_start_node(graph):
+    #dummy choosing of starting node by choosing uniformly random between N of them
+    return np.random.choice(graph.N)
 
 def initilize_model_state(graph : DirectedGraph):
     init_state=[0]*(graph.N*3)
 
-    init_node=918
+    init_node=choose_start_node(graph)
 
     #set 1 to index of current node (we start from node 0)
     offset=0
     init_state[offset+init_node]=1
-
 
     #set values to 1 at indices of nodes that are reachable from current node
     offset=graph.N
@@ -95,20 +113,33 @@ def generate_session(model, graph):
             break
 
         reward+=transition_reward
-        state_action_seq.append((cur_state, action))
+        state_action_seq.append((cur_state.detach().numpy(), action))
 
         cur_state=update_model_state(cur_state, action, graph)
 
     return (state_action_seq, reward)
+
+def generate_sess(model, graph, i):
+    """
+    Help function to allow multiprocessing.
+    """
+    return generate_session(model, graph)
 
 def generate_sessions(model, graph, n_sessions):
     """
     Session consists of list that looks like: {[(s1,a1),(s2,a2),...,(sn,an)],r}, si=state in step i, ai=action in step i
     Code generates list of such sessions
     """
-    sessions=[None]*n_sessions
-    for i in trange(n_sessions):
-        sessions[i]=generate_session(model, graph)
+
+    gen_sess_fcn = functools.partial(generate_sess, model, graph)
+
+    with multiprocessing.Pool(processes=int(multiprocessing.cpu_count())) as pool:
+        sessions = pool.map(gen_sess_fcn, range(n_sessions))
+    # with concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as pool:#15.2325279712677
+    #     pool.map(gen_sess_fcn, range(n_sessions))
+
+    # for i in range(n_sessions):#11.512
+    #     sessions[i]=generate_session(model, graph)
 
     return sessions
 
@@ -126,6 +157,17 @@ def select_super_sessions(sessions):
 def select_elite_sessions(sessions):
     return select_top_sessions(sessions, TRAIN_PERCENTILE)
 
+def create_data_loader(N, sessions):
+    x, y = np.empty((0, 3*N)), np.empty((0, 1))
+    for state_action_pairs, _ in sessions:
+        for state, action in state_action_pairs:
+            x = np.append(x, state[None, :], axis=0)
+            y = np.append(y, np.array([[action]]), axis=0)
+
+    dataset = torch.from_numpy(np.column_stack((x, y))).float()
+    loader = torch.utils.data.DataLoader(dataset, shuffle=True, batch_size=16)
+
+    return loader
 
 def obtain_graph_walker_policy(graph):
     #input to agent (neural network) consists of 3 parts each of length N
@@ -164,14 +206,7 @@ def obtain_graph_walker_policy(graph):
         print('Elite and supper sessions select time: {}'.format(elite_and_super_sessions_select_time))
 
         t=time.time()
-        train_x, train_y=np.empty((0,3*graph.N)), np.empty((0,1))
-        for state_action_pairs,_ in elite_sessions:
-            for state, action in state_action_pairs:
-                train_x=np.append(train_x, state.detach().numpy()[None,:], axis=0)
-                train_y=np.append(train_y, np.array([[action]]), axis=0)
-
-        train_dataset=torch.from_numpy(np.column_stack((train_x, train_y))).float()
-        train_loader=torch.utils.data.DataLoader(train_dataset, shuffle=True, batch_size=16)
+        train_loader=create_data_loader(graph.N, elite_sessions)
         train_loader_creation_time=time.time()-t
         print('Train loader creation time: {}'.format(train_loader_creation_time))
 
@@ -186,7 +221,7 @@ def obtain_graph_walker_policy(graph):
         if i>=5:
             best_session_state_action_pairs, best_session_reward = super_sessions[0]
             print('Best session reward: {}'.format(best_session_reward))
-            print(28, end='')
+            print(918, end='')
             for state, action in best_session_state_action_pairs:
                 print('->{}'.format(action), end='')
 
@@ -196,7 +231,7 @@ def obtain_graph_walker_policy(graph):
         if i>20 and sum([abs(reward_super_sessions_mean-mean_reward_vals[j]) for j in range(-1,-5,-1)])<0.1:
             best_session_state_action_pairs,best_session_reward=super_sessions[0]
             print('Best session reward: {}'.format(best_session_reward))
-            print(28,end='')
+            print(918,end='')
             for state, action in best_session_state_action_pairs:
                 print('->{}'.format(action),end='')
 
@@ -207,4 +242,4 @@ def obtain_graph_walker_policy(graph):
 
 
 if __name__=='__main__':
-    obtain_graph_walker_policy(util.build_graph3(n_chains=25,chains_length=100))
+    obtain_graph_walker_policy(util.build_graph3(n_chains=20,chains_length=10))
